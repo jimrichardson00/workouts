@@ -17,11 +17,27 @@ import moviepy
 from pathlib import Path
 
 # local packages
+# https://github.com/rpuntaie/syncstart
 from syncstart import file_offset
 
 # set directories
+data_dir = '../data'
 raw_dir = '../data/raw/'
 processed_dir = '../data/processed/'
+compressed_dir = '../data/compressed'
+final_dir = '../data/final'
+
+# make directories if they dont exist
+dirs = [
+  data_dir,
+  raw_dir, 
+  processed_dir, 
+  compressed_dir,
+  final_dir, 
+]
+for d in dirs:
+  if not os.path.exists(d):
+    os.makedirs(d, exists_)
 
 # given a filename for a video, returns the start/end times, pulled from metadata
 # used to check if two video files overlap
@@ -46,50 +62,6 @@ def getTimes(filename):
 # list of filenames in raw directory to process
 filenames = [f for f in os.listdir(raw_dir) if f.endswith("mp4")]
 filenames.sort()
-
-def trimVideos(raw_dir, fnameA, fnameB):
-
-  # pull start, end times
-  stimeA, etimeA = getTimes(raw_dir + fnameA)
-
-  # get start and end times of fnameB
-  stimeB, etimeB = getTimes(raw_dir + fnameB)
-
-  # trim the larger of fnameA, fnameB
-  stime = max([stimeA, stimeB]) - dt.timedelta(seconds=5)
-  etime = min([etimeA, etimeB]) + dt.timedelta(seconds=5)
-
-  # fname a
-  t1A = max([(stime - stimeA).total_seconds(), 0])
-  t2A = min([(etime - stimeA).total_seconds(), (etimeA - stimeA).total_seconds()])
-  os.rename(raw_dir + fnameA, raw_dir + 'unclipped_' + fnameA)
-  moviepy.video.io.ffmpeg_tools.ffmpeg_extract_subclip(
-    filename=raw_dir + 'unclipped_' + fnameA,
-    t1=t1A, t2=t2A,
-    targetname=raw_dir + 'clipped_' + fnameA
-  )
-  os.system('''ffmpeg -i {inf} -i {out} -map 1 -map_metadata 0 -c copy {fixed}'''.format(
-      inf=raw_dir + 'unclipped_' + fnameA, 
-      out=raw_dir + 'clipped_' + fnameA, 
-      fixed=raw_dir + fnameA, 
-    )
-  )
-
-  # fname b
-  t1B = max([(stime - stimeB).total_seconds(), 0])
-  t2B = max([(etime - stimeB).total_seconds(), (etimeB - stimeB).total_seconds()])
-  os.rename(raw_dir + fnameB, raw_dir + 'unclipped_' + fnameB)
-  moviepy.video.io.ffmpeg_tools.ffmpeg_extract_subclip(
-    filename=raw_dir + 'unclipped_' + fnameB,
-    t1=t1B, t2=t2B,
-    targetname=raw_dir + 'clipped_' + fnameB
-  )
-  os.system('''ffmpeg -i {inf} -i {out} -map 1 -map_metadata 0 -c copy {fixed}'''.format(
-      inf=raw_dir + 'unclipped_' + fnameB, 
-      out=raw_dir + 'clipped_' + fnameB, 
-      fixed=raw_dir + fnameB, 
-    )
-  )
 
 # start looping through filenames (will remove processed filenames making list shorter)
 while len(filenames) > 0:
@@ -150,23 +122,6 @@ while len(filenames) > 0:
     # calculate min duration, used to trim videos to the same length
     duration = min([clipA.duration - delayA, clipB.duration - delayB])
 
-    # use the calculated delay to make sure videos start at the same time
-
-    # using ffmpeg
-
-    # # extract 
-    # moviepy.video.io.ffmpeg_tools.ffmpeg_extract_subclip(filename=raw_dir + fnameA, t1=delayA, t2=duration + delayA, targetname='left.mp4')
-    # moviepy.video.io.ffmpeg_tools.ffmpeg_extract_subclip(filename=raw_dir + fnameB, t1=delayB, t2=duration + delayB, targetname='right.mp4')
-
-    # # create new clip that is the videos next to each other, and save to processed directory
-    # print('Writing concat file :',  processed_dir + fname)
-    # if fname not in os.listdir(processed_dir):
-    #   os.system('''ffmpeg -i left.mp4 -i right.mp4 -filter_complex hstack "{output}"
-    #     '''.format(output=processed_dir + fname)
-    #     )
-
-    # using moviepy
-
     clipA = clipA.subclip(delayA, duration + delayA)
     clipB = clipB.subclip(delayB, duration + delayB)
 
@@ -197,11 +152,10 @@ while len(filenames) > 0:
     # create new clip that is the videos next to each other, and save to processed directory
     final = clips_array([[clipA, clipB]])
     final = final.resize((2*width, height))
-    # final = final.subclip(0, 5)
     if fname not in os.listdir(processed_dir):
       print('Writing concat file :',  processed_dir + fname)
       final.write_videofile(processed_dir + fname,
-        codec='libx265',
+        codec='libx264',
         threads=4,
         # crf=20,
         fps=24,
@@ -230,12 +184,6 @@ while len(filenames) > 0:
     if fnameB in filenames:
       filenames.remove(fnameB)
 
-    # # put everything back the way it was
-    # final.close()
-    # clipB.close()
-    # os.remove(Path(Path(raw_dir), fnameB))
-    # os.replace(Path(Path(raw_dir), 'unclipped_' + fnameB), Path(Path(raw_dir), fnameB))
-
   # if we've gone through entire list and no fnameB overlaps with fnameA, just save fnameA in processed dir
   if matching_filenames == False:
     print('no matching files for : ', fnameA)
@@ -248,10 +196,6 @@ while len(filenames) > 0:
           output=processed_dir + fname,
           )
         )
-      # shutil.copy(raw_dir + fnameA, processed_dir + fname)
-
-  # clipA.close()
-  # os.replace(Path(Path(raw_dir), 'unclipped_' + fnameA), Path(Path(raw_dir), fnameA))
 
   # remove fnameA from filenames and start again
   if fnameA in filenames:
